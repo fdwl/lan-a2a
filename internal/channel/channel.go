@@ -17,7 +17,7 @@ type Channel struct {
 	ID        string      `json:"id"`
 	Name      string      `json:"name"`
 	Mode      ChannelMode `json:"mode"`
-	Host      string      `json:"host"`       // P2P 模式下的 Host agent ID
+	Host      string      `json:"host"`       // Host agent ID in P2P mode
 	Members   []string    `json:"members"`
 	CreatedAt time.Time   `json:"created_at"`
 	Creator   string      `json:"creator"`
