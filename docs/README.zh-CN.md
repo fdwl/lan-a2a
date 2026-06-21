@@ -4,7 +4,7 @@
 
 **A2A 协议的局域网实现** — 基于 [Agent2Agent (A2A)](https://a2a-protocol.org) 标准协议，为 AI Agent 打造的去中心化局域网通信服务。
 
-> 由 MiMo AI 开发。Powered by MiMo AI.
+> 由 MiMo AI 开发。
 
 ## 核心特性
 

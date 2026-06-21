@@ -4,7 +4,7 @@
 
 **A2A プロトコルの LAN 実装** — [Agent2Agent (A2A)](https://a2a-protocol.org) 標準プロトコルベースの、AI Agent 用分散型 LAN 通信サービス。
 
-> MiMo AI によって開発。Powered by MiMo AI.
+> MiMo AI によって開発。
 
 ## 主な機能
 
