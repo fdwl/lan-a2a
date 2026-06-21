@@ -11,7 +11,7 @@
 │   is online first"                                       │
 ├──────────────────────────────────────────────────────────┤
 │                  MCP Tool Layer (stdio)                   │
-│  lan_get_online_agents / lan_open_connection / ...        │
+│  16 tools: get_online_agents, get_agent_info, ...          │
 ├───────────────┬────────────────────┬─────────────────────┤
 │   P2P Module  │    File Service     │   Channel Mgmt      │
 │  (WebSocket)  │ (chunk/concurrent/ │  (in-memory/stateless)│
@@ -54,7 +54,7 @@ Reconnection (on disconnect):
 | `plugins` | `internal/plugins` | Plugin system | Event-driven hooks, filter/transform decorators, **optional AuthPlugin interface** |
 | `profile` | `internal/profile` | Agent identity | Profile management, persistence, A2A AgentCard conversion |
 | `logger` | `internal/logger` | Structured logging | slog JSON output, component tags, level filtering |
-| `mcp` | `internal/mcp` | MCP JSON-RPC server | 11 tools, stdio interface, JSON-RPC 2.0 |
+| `mcp` | `internal/mcp` | MCP JSON-RPC server | **16 tools**, stdio interface, JSON-RPC 2.0, **push notifications** |
 | `adapter` | `internal/adapter` | A2A protocol adapter | AgentCard/Task/Message mapping, Profile ↔ Card conversion |
 | `relay` | `internal/relay` | Relay client | Cross-subnet relay, **automatic reconnection with exponential backoff** |
 
@@ -130,6 +130,37 @@ Every 30 seconds:
   → Remove peers where LastSeen > 60 seconds ago
   → Log removal for debugging
 ```
+
+## MCP Tools (16 total)
+
+| Tool | Description |
+|------|-------------|
+| `lan_get_online_agents` | Get all online agent IDs |
+| `lan_get_agent_info` | Get detailed AgentCard info for a peer |
+| `lan_open_connection` | Open WebSocket connection to a peer |
+| `lan_close_connection` | Close connection to a peer |
+| `lan_create_channel` | Create channel and invite peers |
+| `lan_leave_channel` | Leave a channel |
+| `lan_list_channels` | List channels the agent has joined |
+| `lan_send_message` | Send message to a channel |
+| `lan_share_file` | Share file (auto-chunked) |
+| `lan_share_folder` | Share folder (incremental sync) |
+| `lan_sync_folder` | Sync folder with remote peer |
+| `lan_get_transfer_status` | Get transfer status |
+| `lan_list_transfers` | List active transfers |
+| `lan_set_profile` | Update agent name/description/skills |
+| `lan_subscribe` | Subscribe to event notifications |
+| `lan_unsubscribe` | Unsubscribe from events |
+
+### Push Notifications
+
+MCP server supports push notifications via stdout JSON-RPC notifications:
+
+```json
+{"jsonrpc":"2.0","method":"agent.online","params":{"peer_id":"agent-b"}}
+```
+
+Subscribe with `lan_subscribe`, unsubscribe with `lan_unsubscribe`.
 
 ## Plugin System
 

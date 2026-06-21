@@ -10,7 +10,7 @@
 │  "我需要和 agent-b 协作，先看看谁在线"                       │
 ├──────────────────────────────────────────────────────────┤
 │                   MCP 工具层 (stdio)                       │
-│  lan_get_online_agents / lan_open_connection / ...        │
+│  16 个工具: get_online_agents, get_agent_info, ...         │
 ├───────────────┬────────────────────┬─────────────────────┤
 │   P2P 模块     │    文件服务          │   频道管理           │
 │  (WebSocket)  │ (分块/并发/流式写盘)  │  (纯内存/无状态)     │
@@ -53,7 +53,7 @@ AI 决定交互：
 | `plugins` | `internal/plugins` | 插件系统 | 事件驱动 Hook、过滤/转换装饰器、**可选 AuthPlugin 接口** |
 | `profile` | `internal/profile` | Agent 身份 | Profile 管理、持久化、A2A AgentCard 转换 |
 | `logger` | `internal/logger` | 结构化日志 | slog JSON 输出、组件标签、级别过滤 |
-| `mcp` | `internal/mcp` | MCP JSON-RPC 服务 | 11 个工具、stdio 接口、JSON-RPC 2.0 |
+| `mcp` | `internal/mcp` | MCP JSON-RPC 服务 | **16 个工具**、stdio 接口、JSON-RPC 2.0、**推送通知** |
 | `adapter` | `internal/adapter` | A2A 协议适配 | AgentCard/Task/Message 映射、Profile ↔ Card 转换 |
 | `relay` | `internal/relay` | Relay 客户端 | 跨子网中转、**自动重连 (指数退避)** |
 
@@ -129,6 +129,37 @@ Relay 连接断开
   → 移除 LastSeen > 60 秒的节点
   → 记录日志
 ```
+
+## MCP 工具 (共 16 个)
+
+| 工具 | 描述 |
+|------|------|
+| `lan_get_online_agents` | 获取所有在线 Agent ID |
+| `lan_get_agent_info` | 获取 peer 的详细 AgentCard 信息 |
+| `lan_open_connection` | 打开到 peer 的 WebSocket 连接 |
+| `lan_close_connection` | 关闭到 peer 的连接 |
+| `lan_create_channel` | 创建频道并邀请 peer |
+| `lan_leave_channel` | 离开频道 |
+| `lan_list_channels` | 列出已加入的频道 |
+| `lan_send_message` | 向频道发送消息 |
+| `lan_share_file` | 分享文件（自动分块） |
+| `lan_share_folder` | 分享文件夹（增量同步） |
+| `lan_sync_folder` | 与远程 peer 同步文件夹 |
+| `lan_get_transfer_status` | 获取传输状态 |
+| `lan_list_transfers` | 列出活跃传输 |
+| `lan_set_profile` | 更新 agent 名称/描述/技能 |
+| `lan_subscribe` | 订阅事件通知 |
+| `lan_unsubscribe` | 取消订阅事件 |
+
+### 推送通知
+
+MCP server 支持通过 stdout JSON-RPC notification 推送事件：
+
+```json
+{"jsonrpc":"2.0","method":"agent.online","params":{"peer_id":"agent-b"}}
+```
+
+使用 `lan_subscribe` 订阅，`lan_unsubscribe` 取消订阅。
 
 ## 插件系统
 
