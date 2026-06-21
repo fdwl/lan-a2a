@@ -1,0 +1,137 @@
+package profile
+
+import (
+	"crypto/rand"
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"sync"
+	"time"
+)
+
+type Profile struct {
+	ID      string   `json:"id"`                 // 必填，客户端自生成
+	Name    string   `json:"name"`               // 必填，显示名称
+	Avatar  string   `json:"avatar,omitempty"`   // 头像（URL/路径/base64）
+	Roles   []string `json:"roles,omitempty"`    // 角色列表（如 ["frontend", "react"]）
+	Version int      `json:"version"`            // 版本号
+	Created int64   `json:"created"`
+	Updated int64   `json:"updated"`
+
+	Tags     []string          `json:"tags,omitempty"`
+	Metadata map[string]string `json:"metadata,omitempty"`
+}
+
+func (p *Profile) Validate() error {
+	if p.ID == "" {
+		return fmt.Errorf("id 不能为空")
+	}
+	if p.Name == "" {
+		return fmt.Errorf("name 不能为空")
+	}
+	return nil
+}
+
+func (p *Profile) SetTimestamps() {
+	now := time.Now().Unix()
+	if p.Created == 0 {
+		p.Created = now
+	}
+	p.Updated = now
+	if p.Version == 0 {
+		p.Version = 1
+	}
+}
+
+func (p *Profile) HasRole(role string) bool {
+	for _, r := range p.Roles {
+		if r == role {
+			return true
+		}
+	}
+	return false
+}
+
+func (p *Profile) AddRole(role string) {
+	if !p.HasRole(role) {
+		p.Roles = append(p.Roles, role)
+	}
+}
+
+func NewID() string {
+	b := make([]byte, 16)
+	rand.Read(b)
+	b[6] = (b[6] & 0x0f) | 0x40
+	b[8] = (b[8] & 0x3f) | 0x80
+	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x",
+		b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
+}
+
+const ProfileFileName = ".lan-agent-profile.json"
+
+func Save(p *Profile, dir string) error {
+	if err := p.Validate(); err != nil {
+		return err
+	}
+	p.SetTimestamps()
+	data, err := json.MarshalIndent(p, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dir, ProfileFileName), data, 0644)
+}
+
+func Load(dir string) (*Profile, error) {
+	data, err := os.ReadFile(filepath.Join(dir, ProfileFileName))
+	if err != nil {
+		return nil, err
+	}
+	var p Profile
+	err = json.Unmarshal(data, &p)
+	return &p, err
+}
+
+type Manager struct {
+	profiles map[string]*Profile
+	mu       sync.RWMutex
+}
+
+func NewManager() *Manager {
+	return &Manager{profiles: make(map[string]*Profile)}
+}
+
+func (m *Manager) Set(p *Profile) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.profiles[p.ID] = p
+}
+
+func (m *Manager) Get(id string) (*Profile, bool) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	p, ok := m.profiles[id]
+	return p, ok
+}
+
+func (m *Manager) Remove(id string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.profiles, id)
+}
+
+func (m *Manager) List() []*Profile {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	result := make([]*Profile, 0, len(m.profiles))
+	for _, p := range m.profiles {
+		result = append(result, p)
+	}
+	return result
+}
+
+func (m *Manager) Count() int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return len(m.profiles)
+}

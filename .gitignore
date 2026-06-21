@@ -1,0 +1,28 @@
+# Binaries
+lan-a2a
+lan-relay
+*.exe
+
+# Go
+vendor/
+
+# Node.js
+clients/typescript/node_modules/
+clients/typescript/dist/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data
+.lan-agent-bus/
+.lan-agent-profile.json
+
+# Generated docs (regenerate with: go run cmd/gendoc/main.go docs/site)
+docs/site/
