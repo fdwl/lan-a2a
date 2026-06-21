@@ -2,10 +2,10 @@ package fileservice
 
 import (
 	"fmt"
-	"log"
 	"sync"
 	"time"
 
+	"github.com/fdwl/lan-a2a/internal/logger"
 	"github.com/fdwl/lan-a2a/internal/plugins"
 )
 
@@ -219,8 +219,7 @@ func (fs *FileService) ListTransfers() []*Transfer {
 
 func (fs *FileService) LogStatus() {
 	for _, t := range fs.ListTransfers() {
-		log.Printf("[fs] %s: %s %.1f%% (%d/%d chunks)",
-			t.ID, t.Status, t.Progress, fs.doneCount(t), t.TotalChunks)
+		logger.Info("transfer status", "transfer_id", t.ID, "status", t.Status, "progress", t.Progress, "done_chunks", fs.doneCount(t), "total_chunks", t.TotalChunks)
 	}
 }
 

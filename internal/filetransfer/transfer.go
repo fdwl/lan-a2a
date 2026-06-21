@@ -5,11 +5,12 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/fdwl/lan-a2a/internal/logger"
 )
 
 const (
@@ -24,7 +25,8 @@ type IncomingFile struct {
 	From        string
 	ReceivedAt  time.Time
 	TotalChunks int
-	Chunks      map[int][]byte
+	Received    map[int]bool
+	file        *os.File
 	LocalPath   string
 }
 
@@ -61,10 +63,16 @@ func (m *Manager) PrepareIncoming(channelID, msgID, from, filename string, fileS
 	fi := &IncomingFile{
 		ChannelID: channelID, Filename: safeFilename, FileSize: fileSize,
 		From: from, ReceivedAt: time.Now(), TotalChunks: totalChunks,
-		Chunks: make(map[int][]byte),
+		Received: make(map[int]bool),
+	}
+	fi.LocalPath = filepath.Join(m.DownloadDir(channelID), safeFilename)
+	f, err := os.Create(fi.LocalPath)
+	if err != nil {
+		logger.Error("failed to create file", "path", fi.LocalPath, "error", err)
+	} else {
+		fi.file = f
 	}
 	m.incoming[msgID] = fi
-	fi.LocalPath = filepath.Join(m.DownloadDir(channelID), safeFilename)
 	return fi.LocalPath
 }
 
@@ -75,29 +83,34 @@ func (m *Manager) AddChunk(msgID string, chunkIdx int, data []byte) error {
 	if !ok {
 		return fmt.Errorf("unknown transfer: %s", msgID)
 	}
-	fi.Chunks[chunkIdx] = data
-	if len(fi.Chunks) == fi.TotalChunks {
+	if fi.file != nil {
+		offset := int64(chunkIdx) * ChunkSize
+		if _, err := fi.file.WriteAt(data, offset); err != nil {
+			return fmt.Errorf("write chunk %d: %w", chunkIdx, err)
+		}
+	}
+	fi.Received[chunkIdx] = true
+	if len(fi.Received) == fi.TotalChunks {
 		return m.assemble(fi)
 	}
 	return nil
 }
 
 func (m *Manager) assemble(fi *IncomingFile) error {
-	f, err := os.Create(fi.LocalPath)
+	if fi.file != nil {
+		fi.file.Close()
+		fi.file = nil
+	}
+	f, err := os.Open(fi.LocalPath)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
 	hash := sha256.New()
-	for i := 0; i < fi.TotalChunks; i++ {
-		chunk, ok := fi.Chunks[i]
-		if !ok {
-			return fmt.Errorf("missing chunk %d", i)
-		}
-		f.Write(chunk)
-		hash.Write(chunk)
+	if _, err := io.Copy(hash, f); err != nil {
+		return err
 	}
-	log.Printf("[file] saved: %s -> %s", fi.Filename, fi.LocalPath)
+	logger.Info("file saved", "filename", fi.Filename, "path", fi.LocalPath, "checksum", hex.EncodeToString(hash.Sum(nil)))
 	if m.OnComplete != nil {
 		m.OnComplete(fi)
 	}

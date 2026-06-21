@@ -4,13 +4,13 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/grandcat/zeroconf"
+	"github.com/fdwl/lan-a2a/internal/logger"
 	"github.com/fdwl/lan-a2a/internal/protocol"
 )
 
@@ -60,12 +60,33 @@ func (p *P2P) Start() error {
 
 	p.server = &http.Server{Addr: fmt.Sprintf(":%d", p.port), Handler: mux}
 	go func() {
-		log.Printf("[p2p] listening on :%d", p.port)
+		logger.Info("listening", "port", p.port)
 		if err := p.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Printf("[p2p] server error: %v", err)
+			logger.Error("server error", "error", err)
 		}
 	}()
+	go p.cleanupStalePeers()
 	return nil
+}
+
+func (p *P2P) cleanupStalePeers() {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-p.done:
+			return
+		case <-ticker.C:
+			p.onlineMu.Lock()
+			for id, peer := range p.online {
+				if time.Since(peer.LastSeen) > 60*time.Second {
+					delete(p.online, id)
+					logger.Info("removed stale peer", "peer_id", id)
+				}
+			}
+			p.onlineMu.Unlock()
+		}
+	}
 }
 
 func (p *P2P) Stop() {
@@ -144,7 +165,7 @@ func (p *P2P) OpenConn(peerID string) (*protocol.Conn, error) {
 func (p *P2P) handleWS(w http.ResponseWriter, r *http.Request) {
 	ws, err := protocol.Upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Printf("[p2p] upgrade error: %v", err)
+		logger.Error("upgrade error", "error", err)
 		return
 	}
 	conn := protocol.NewConn(ws)
@@ -155,10 +176,13 @@ func (p *P2P) handleWS(w http.ResponseWriter, r *http.Request) {
 		conn.Close()
 		return
 	}
-	_ = conn.Send(protocol.Message{
+	if err := conn.Send(protocol.Message{
 		Type: protocol.MsgTypeRegisterOK, From: p.agentID, ID: protocol.NewMsgID(),
 		Profile: p.profile,
-	})
+	}); err != nil {
+		conn.Close()
+		return
+	}
 
 	// Store peer with profile
 	p.onlineMu.Lock()
@@ -203,7 +227,7 @@ func StartDiscovery(agentID string, port int, onFound func(peerID, addr string, 
 	if err != nil {
 		return nil, err
 	}
-	log.Printf("[mdns] registered as %s", agentID)
+	logger.Info("mDNS registered", "agent_id", agentID)
 
 	resolver, _ := zeroconf.NewResolver(nil)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -299,7 +323,7 @@ func RegisterRelay(name string, port int) (func(), error) {
 	if err != nil {
 		return nil, err
 	}
-	log.Printf("[mdns] relay registered as %s on port %d", name, port)
+	logger.Info("mDNS relay registered", "name", name, "port", port)
 	return func() { srv.Shutdown() }, nil
 }
 

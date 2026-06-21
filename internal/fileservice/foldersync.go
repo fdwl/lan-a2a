@@ -3,12 +3,12 @@ package fileservice
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"sync"
 	"time"
 
+	"github.com/fdwl/lan-a2a/internal/logger"
 	"github.com/fdwl/lan-a2a/internal/plugins"
 )
 
@@ -127,7 +127,7 @@ func (fsync *FolderSync) SyncFolder(root, peerID string) (*SyncResult, error) {
 	for _, entry := range allEntries {
 		t, err := fsync.fs.SendFile(peerID, entry.Path)
 		if err != nil {
-			log.Printf("[sync] send %s failed: %v", entry.RelPath, err)
+			logger.Error("send file failed", "file", entry.RelPath, "error", err)
 			continue
 		}
 		result.Transfers = append(result.Transfers, t.ID)

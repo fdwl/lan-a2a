@@ -2,7 +2,17 @@ package plugins
 
 import (
 	"sync"
+
+	"github.com/fdwl/lan-a2a/internal/protocol"
 )
+
+// AuthPlugin is an optional interface for authentication.
+// Implement this to add custom auth to WebSocket connections.
+type AuthPlugin interface {
+	// Authenticate validates a connection attempt.
+	// Return nil to allow, non-nil to reject.
+	Authenticate(agentID string, msg protocol.Message) error
+}
 
 const (
 	EventTransferStart  = "transfer.start"
@@ -32,9 +42,10 @@ type Plugin interface {
 }
 
 type Manager struct {
-	plugins []Plugin
-	hooks   map[string][]Hook
-	mu      sync.RWMutex
+	plugins   []Plugin
+	hooks     map[string][]Hook
+	authPlugin AuthPlugin
+	mu        sync.RWMutex
 }
 
 func NewManager() *Manager {
@@ -53,6 +64,22 @@ func (m *Manager) On(eventType string, hook Hook) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.hooks[eventType] = append(m.hooks[eventType], hook)
+}
+
+func (m *Manager) SetAuth(p AuthPlugin) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.authPlugin = p
+}
+
+func (m *Manager) Authenticate(agentID string, msg protocol.Message) error {
+	m.mu.RLock()
+	p := m.authPlugin
+	m.mu.RUnlock()
+	if p == nil {
+		return nil
+	}
+	return p.Authenticate(agentID, msg)
 }
 
 func (m *Manager) Emit(event *Event) {

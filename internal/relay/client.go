@@ -4,11 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/fdwl/lan-a2a/internal/logger"
 	"github.com/fdwl/lan-a2a/internal/protocol"
 )
 
@@ -18,6 +18,9 @@ type Client struct {
 	conn    *protocol.Conn
 	mu      sync.Mutex
 	done    chan struct{}
+	stopped bool
+
+	maxRetries int
 
 	OnMessage   func(msg protocol.Message, from string)
 	OnFileData   func(msg protocol.Message, data io.Reader, from string)
@@ -50,7 +53,8 @@ func (c *Client) Connect() error {
 	}
 
 	c.conn = conn
-	log.Printf("[relay] connected to %s", c.server)
+	c.maxRetries = 0
+	logger.Info("connected", "server", c.server)
 	go c.readLoop()
 	go c.pingLoop()
 	go c.queryLoop()
@@ -58,10 +62,57 @@ func (c *Client) Connect() error {
 }
 
 func (c *Client) Stop() {
+	c.mu.Lock()
+	c.stopped = true
+	c.mu.Unlock()
 	close(c.done)
 	if c.conn != nil {
 		c.conn.Close()
 	}
+}
+
+func (c *Client) IsConnected() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.conn != nil && !c.stopped
+}
+
+func (c *Client) reconnect() {
+	c.mu.Lock()
+	if c.stopped {
+		c.mu.Unlock()
+		return
+	}
+	c.mu.Unlock()
+
+	for {
+		backoff := c.nextBackoff()
+		logger.Info("reconnecting", "server", c.server, "backoff", backoff, "attempt", c.maxRetries+1)
+		time.Sleep(backoff)
+
+		c.mu.Lock()
+		if c.stopped {
+			c.mu.Unlock()
+			return
+		}
+		c.mu.Unlock()
+
+		if err := c.Connect(); err != nil {
+			logger.Error("reconnect failed", "error", err)
+			continue
+		}
+		logger.Info("reconnected", "server", c.server)
+		return
+	}
+}
+
+func (c *Client) nextBackoff() time.Duration {
+	c.maxRetries++
+	backoff := time.Second * time.Duration(1<<uint(c.maxRetries-1))
+	if backoff > 30*time.Second {
+		backoff = 30 * time.Second
+	}
+	return backoff
 }
 
 func (c *Client) Send(msg protocol.Message) error {
@@ -78,7 +129,7 @@ func (c *Client) QueryOnline() error {
 
 func (c *Client) readLoop() {
 	defer func() {
-		log.Printf("[relay] disconnected from %s", c.server)
+		logger.Info("disconnected", "server", c.server)
 	}()
 	for {
 		select {
@@ -88,11 +139,27 @@ func (c *Client) readLoop() {
 		}
 		msg, err := c.conn.Read()
 		if err != nil {
+			c.mu.Lock()
+			stopped := c.stopped
+			c.mu.Unlock()
+			if stopped {
+				return
+			}
+			go c.reconnect()
 			return
 		}
 		switch msg.Type {
 		case protocol.MsgTypePing:
-			c.conn.Send(protocol.Message{Type: protocol.MsgTypePong, From: c.agentID, ID: protocol.NewMsgID()})
+			if err := c.conn.Send(protocol.Message{Type: protocol.MsgTypePong, From: c.agentID, ID: protocol.NewMsgID()}); err != nil {
+				c.mu.Lock()
+				stopped := c.stopped
+				c.mu.Unlock()
+				if stopped {
+					return
+				}
+				go c.reconnect()
+				return
+			}
 		case protocol.MsgTypePong:
 		case protocol.MsgTypeOnlineList:
 			var ids []string
