@@ -4,7 +4,7 @@
 
 **A2A Protocol for LAN** — A decentralized LAN communication service for AI Agents based on the [Agent2Agent (A2A)](https://a2a-protocol.org) standard protocol.
 
-> Developed by [Xiaomi MiMo](https://github.com/XiaomiMiMo) team. Powered by MiMo AI.
+> Developed by MiMo AI. Powered by MiMo AI.
 
 ## Key Features
 
@@ -143,5 +143,5 @@ MIT License. See [LICENSE](LICENSE).
 ---
 
 <p align="center">
-  Built with ❤️ by <a href="https://github.com/XiaomiMiMo">Xiaomi MiMo</a> Team
+  Built with ❤️ by <a href="https://github.com/XiaomiMiMo">MiMo AI</a>
 </p>
