@@ -119,6 +119,16 @@ func (p *P2P) IsOnline(peerID string) bool {
 	return ok
 }
 
+func (p *P2P) GetPeerProfile(peerID string) *protocol.ProfilePayload {
+	p.onlineMu.RLock()
+	defer p.onlineMu.RUnlock()
+	peer, ok := p.online[peerID]
+	if !ok {
+		return nil
+	}
+	return peer.Profile
+}
+
 // OpenConn opens an on-demand WebSocket connection to a peer.
 func (p *P2P) OpenConn(peerID string) (*protocol.Conn, error) {
 	p.onlineMu.RLock()

@@ -1,6 +1,6 @@
 # Binaries
-lan-a2a
-lan-relay
+/lan-a2a
+/lan-relay
 *.exe
 
 # Go

@@ -7,33 +7,41 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync"
 )
 
 type AgentAPI interface {
 	GetOnlinePeers() []string
+	GetAgentInfo(peerID string) (interface{}, error)
 	OpenConnection(peerID string) error
 	CloseConnection(peerID string) error
 	CreateChannel(name string, peerIDs []string) (string, []string, error)
 	LeaveChannel(channelID string) error
+	ListChannels() ([]interface{}, error)
 	SendMessage(channelID, body string) error
 	ShareFile(channelID, filePath string) error
 	ShareFolder(channelID, folderPath string) error
 	SyncFolder(folderPath, peerID string) error
 	GetTransferStatus(transferID string) (interface{}, error)
 	ListTransfers() ([]interface{}, error)
+	SetProfile(name, description string, skills []string) error
 }
 
 type Server struct {
 	api    AgentAPI
 	reader *bufio.Reader
 	writer *bufio.Writer
+
+	mu          sync.Mutex
+	subscribers map[string]bool
 }
 
 func NewServer(api AgentAPI) *Server {
 	return &Server{
-		api:    api,
-		reader: bufio.NewReader(os.Stdin),
-		writer: bufio.NewWriter(os.Stdout),
+		api:         api,
+		reader:      bufio.NewReader(os.Stdin),
+		writer:      bufio.NewWriter(os.Stdout),
+		subscribers: make(map[string]bool),
 	}
 }
 
@@ -88,10 +96,37 @@ func (s *Server) handle(req struct {
 	}
 }
 
+// Notify sends a JSON-RPC notification (no id field) to stdout.
+func (s *Server) Notify(method string, params interface{}) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	notification := map[string]interface{}{
+		"jsonrpc": "2.0",
+		"method":  method,
+		"params":  params,
+	}
+	data, _ := json.Marshal(notification)
+	s.writer.Write(data)
+	s.writer.WriteByte('\n')
+	s.writer.Flush()
+}
+
+// IsSubscribed checks if a notification type is subscribed.
+func (s *Server) IsSubscribed(eventType string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.subscribers[eventType]
+}
+
 func (s *Server) tools() []map[string]interface{} {
 	return []map[string]interface{}{
 		{"name": "lan_get_online_agents", "description": "Get all online AI agents in the local network",
 			"inputSchema": map[string]interface{}{"type": "object", "properties": map[string]interface{}{}}},
+		{"name": "lan_get_agent_info", "description": "Get detailed info of an online agent (AgentCard)",
+			"inputSchema": map[string]interface{}{"type": "object", "properties": map[string]interface{}{
+				"peer_id": map[string]interface{}{"type": "string", "description": "Agent ID to query"},
+			}, "required": []string{"peer_id"}}},
 		{"name": "lan_open_connection", "description": "Open a WebSocket connection to a peer agent. Must be called before sending messages or files.",
 			"inputSchema": map[string]interface{}{"type": "object", "properties": map[string]interface{}{
 				"peer_id": map[string]interface{}{"type": "string", "description": "Agent ID to connect to"},
@@ -109,6 +144,8 @@ func (s *Server) tools() []map[string]interface{} {
 			"inputSchema": map[string]interface{}{"type": "object", "properties": map[string]interface{}{
 				"channel_id": map[string]interface{}{"type": "string"},
 			}, "required": []string{"channel_id"}}},
+		{"name": "lan_list_channels", "description": "List channels the agent has joined",
+			"inputSchema": map[string]interface{}{"type": "object", "properties": map[string]interface{}{}}},
 		{"name": "lan_send_message", "description": "Send a message to a channel. Connections to all channel members must be open first.",
 			"inputSchema": map[string]interface{}{"type": "object", "properties": map[string]interface{}{
 				"channel_id":   map[string]interface{}{"type": "string"},
@@ -135,6 +172,20 @@ func (s *Server) tools() []map[string]interface{} {
 			}, "required": []string{"transfer_id"}}},
 		{"name": "lan_list_transfers", "description": "List all active file transfers",
 			"inputSchema": map[string]interface{}{"type": "object", "properties": map[string]interface{}{}}},
+		{"name": "lan_set_profile", "description": "Update agent profile (name, description, skills)",
+			"inputSchema": map[string]interface{}{"type": "object", "properties": map[string]interface{}{
+				"name":        map[string]interface{}{"type": "string", "description": "Display name"},
+				"description": map[string]interface{}{"type": "string", "description": "Agent description"},
+				"skills":      map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}, "description": "Skill/role list"},
+			}}},
+		{"name": "lan_subscribe", "description": "Subscribe to event notifications (agent.online, agent.offline, message.received, file.received, transfer.progress)",
+			"inputSchema": map[string]interface{}{"type": "object", "properties": map[string]interface{}{
+				"events": map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}},
+			}, "required": []string{"events"}}},
+		{"name": "lan_unsubscribe", "description": "Unsubscribe from event notifications",
+			"inputSchema": map[string]interface{}{"type": "object", "properties": map[string]interface{}{
+				"events": map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}},
+			}, "required": []string{"events"}}},
 	}
 }
 
@@ -155,6 +206,19 @@ func (s *Server) handleToolCall(id interface{}, params json.RawMessage) {
 	case "lan_get_online_agents":
 		peers := s.api.GetOnlinePeers()
 		result = map[string]interface{}{"agents": peers, "count": len(peers)}
+
+	case "lan_get_agent_info":
+		var a struct{ PeerID string `json:"peer_id"` }
+		if json.Unmarshal(p.Arguments, &a) != nil || a.PeerID == "" {
+			toolErr = "Invalid arguments: peer_id required"
+			break
+		}
+		info, err := s.api.GetAgentInfo(a.PeerID)
+		if err != nil {
+			toolErr = err.Error()
+			break
+		}
+		result = info
 
 	case "lan_open_connection":
 		var a struct{ PeerID string `json:"peer_id"` }
@@ -207,6 +271,14 @@ func (s *Server) handleToolCall(id interface{}, params json.RawMessage) {
 			break
 		}
 		result = map[string]interface{}{"status": "left", "channel_id": a.ChannelID}
+
+	case "lan_list_channels":
+		channels, err := s.api.ListChannels()
+		if err != nil {
+			toolErr = err.Error()
+			break
+		}
+		result = map[string]interface{}{"channels": channels, "count": len(channels)}
 
 	case "lan_send_message":
 		var a struct {
@@ -288,6 +360,48 @@ func (s *Server) handleToolCall(id interface{}, params json.RawMessage) {
 			break
 		}
 		result = map[string]interface{}{"transfers": transfers, "count": len(transfers)}
+
+	case "lan_set_profile":
+		var a struct {
+			Name        string   `json:"name"`
+			Description string   `json:"description"`
+			Skills      []string `json:"skills"`
+		}
+		if json.Unmarshal(p.Arguments, &a) != nil {
+			toolErr = "Invalid arguments"
+			break
+		}
+		if err := s.api.SetProfile(a.Name, a.Description, a.Skills); err != nil {
+			toolErr = err.Error()
+			break
+		}
+		result = map[string]interface{}{"status": "updated"}
+
+	case "lan_subscribe":
+		var a struct{ Events []string `json:"events"` }
+		if json.Unmarshal(p.Arguments, &a) != nil || len(a.Events) == 0 {
+			toolErr = "Invalid arguments: events array required"
+			break
+		}
+		s.mu.Lock()
+		for _, e := range a.Events {
+			s.subscribers[e] = true
+		}
+		s.mu.Unlock()
+		result = map[string]interface{}{"status": "subscribed", "events": a.Events}
+
+	case "lan_unsubscribe":
+		var a struct{ Events []string `json:"events"` }
+		if json.Unmarshal(p.Arguments, &a) != nil || len(a.Events) == 0 {
+			toolErr = "Invalid arguments: events array required"
+			break
+		}
+		s.mu.Lock()
+		for _, e := range a.Events {
+			delete(s.subscribers, e)
+		}
+		s.mu.Unlock()
+		result = map[string]interface{}{"status": "unsubscribed", "events": a.Events}
 
 	default:
 		s.replyError(id, -32601, "Unknown tool: "+p.Name)
