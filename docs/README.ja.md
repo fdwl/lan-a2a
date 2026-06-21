@@ -4,6 +4,8 @@
 
 **A2A プロトコルの LAN 実装** — [Agent2Agent (A2A)](https://a2a-protocol.org) 標準プロトコルベースの、AI Agent 用分散型 LAN 通信サービス。
 
+> [Xiaomi MiMo](https://github.com/XiaomiMiMo) チームによって開発。Powered by MiMo AI.
+
 ## 主な機能
 
 - **標準プロトコル**: A2A Go SDK ベース、既製品を活用
@@ -126,6 +128,20 @@ docker run -d --name lan-relay -p 19200:19200 -p 19201:19201 lan-relay:latest
 
 [CONTRIBUTING.md](../CONTRIBUTING.md) を参照してください。
 
+## セキュリティ
+
+[SECURITY.md](../SECURITY.md) を参照してください。
+
+## 変更履歴
+
+[CHANGELOG.md](../CHANGELOG.md) を参照してください。
+
 ## ライセンス
 
 MIT ライセンス。詳細は [LICENSE](../LICENSE) を参照。
+
+---
+
+<p align="center">
+  <a href="https://github.com/XiaomiMiMo">Xiaomi MiMo</a> チームによって開発
+</p>

@@ -74,7 +74,7 @@ func (s *Server) handle(req struct {
 		s.reply(req.ID, map[string]interface{}{
 			"protocolVersion": "2024-11-05",
 			"capabilities":   map[string]interface{}{"tools": map[string]interface{}{}},
-			"serverInfo":     map[string]interface{}{"name": "lan-agent-bus", "version": "0.1.0"},
+			"serverInfo":     map[string]interface{}{"name": "lan-a2a", "version": "0.1.0"},
 		})
 	case "notifications/initialized":
 	case "tools/list":
@@ -92,11 +92,11 @@ func (s *Server) tools() []map[string]interface{} {
 	return []map[string]interface{}{
 		{"name": "lan_get_online_agents", "description": "Get all online AI agents in the local network",
 			"inputSchema": map[string]interface{}{"type": "object", "properties": map[string]interface{}{}}},
-		{"name": "lan_open_connection", "description": "Open a TCP connection to a peer agent. Must be called before sending messages or files.",
+		{"name": "lan_open_connection", "description": "Open a WebSocket connection to a peer agent. Must be called before sending messages or files.",
 			"inputSchema": map[string]interface{}{"type": "object", "properties": map[string]interface{}{
 				"peer_id": map[string]interface{}{"type": "string", "description": "Agent ID to connect to"},
 			}, "required": []string{"peer_id"}}},
-		{"name": "lan_close_connection", "description": "Close the TCP connection to a peer agent",
+		{"name": "lan_close_connection", "description": "Close the WebSocket connection to a peer agent",
 			"inputSchema": map[string]interface{}{"type": "object", "properties": map[string]interface{}{
 				"peer_id": map[string]interface{}{"type": "string", "description": "Agent ID to disconnect from"},
 			}, "required": []string{"peer_id"}}},

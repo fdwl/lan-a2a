@@ -9,8 +9,8 @@ import (
 type ChannelMode string
 
 const (
-	ModeP2P   ChannelMode = "p2p"   // P2P 广播，第一个成员为 Host
-	ModeRelay ChannelMode = "relay" // 通过 Relay 服务器中转
+	ModeP2P   ChannelMode = "p2p"   // P2P broadcast, first member is Host
+	ModeRelay ChannelMode = "relay" // Routed through Relay server
 )
 
 type Channel struct {
@@ -68,7 +68,7 @@ func (m *Manager) Leave(id, agentID string) error {
 			break
 		}
 	}
-	// 如果 Host 离开了，切换 Host
+	// If Host left, promote next member
 	if ch.Host == agentID && len(ch.Members) > 0 {
 		ch.Host = ch.Members[0]
 	}

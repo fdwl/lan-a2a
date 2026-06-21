@@ -4,6 +4,8 @@
 
 **A2A Protocol for LAN** — A decentralized LAN communication service for AI Agents based on the [Agent2Agent (A2A)](https://a2a-protocol.org) standard protocol.
 
+> Developed by [Xiaomi MiMo](https://github.com/XiaomiMiMo) team. Powered by MiMo AI.
+
 ## Key Features
 
 - **Standard Protocol**: Built on the A2A Go SDK, not reinventing the wheel
@@ -126,6 +128,20 @@ docker run -d --name lan-relay -p 19200:19200 -p 19201:19201 lan-relay:latest
 
 See [CONTRIBUTING.md](CONTRIBUTING.md).
 
+## Security
+
+See [SECURITY.md](SECURITY.md).
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md).
+
 ## License
 
 MIT License. See [LICENSE](LICENSE).
+
+---
+
+<p align="center">
+  Built with ❤️ by <a href="https://github.com/XiaomiMiMo">Xiaomi MiMo</a> Team
+</p>
