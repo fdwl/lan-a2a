@@ -567,20 +567,42 @@ func main() {
 	<-sigCh
 	logger.Info("shutting down")
 
-	// Send goodbye to all connected peers
+	// Send goodbye to ALL known online peers (connected + discovered)
+	goodbyeMsg := protocol.Message{
+		Type: protocol.MsgTypeGoodbye, From: a.id, ID: protocol.NewMsgID(),
+		Timestamp: time.Now().Unix(),
+	}
+
+	// 1. Connected peers
 	a.connsMu.Lock()
 	for peerID, conn := range a.conns {
 		if conn != nil {
-			conn.Send(protocol.Message{
-				Type: protocol.MsgTypeGoodbye, From: a.id, ID: protocol.NewMsgID(),
-			})
+			conn.Send(goodbyeMsg)
 		}
-		logger.Info("goodbye sent", "peer", peerID)
+		logger.Info("goodbye sent", "peer", peerID, "type", "connected")
 		delete(a.conns, peerID)
 	}
 	a.connsMu.Unlock()
 
-	// Send goodbye through relay
+	// 2. Discovered but not connected peers — send via p2p direct
+	a.onlineMu.RLock()
+	var discoveredPeers []string
+	for peerID := range a.lanOnline {
+		discoveredPeers = append(discoveredPeers, peerID)
+	}
+	a.onlineMu.RUnlock()
+
+	for _, peerID := range discoveredPeers {
+		// Try to connect and send goodbye, then close
+		conn, err := a.p2p.OpenConn(peerID)
+		if err == nil {
+			conn.Send(goodbyeMsg)
+			conn.Close()
+			logger.Info("goodbye sent", "peer", peerID, "type", "discovered")
+		}
+	}
+
+	// 3. Relay
 	if a.relay != nil {
 		a.relay.SendGoodbye()
 		a.relay.Stop()
