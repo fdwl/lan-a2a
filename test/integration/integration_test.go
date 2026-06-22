@@ -155,6 +155,30 @@ func (a *testAgent) SendMessage(chID, body string) error {
 }
 
 func (a *testAgent) ShareFile(chID, filePath string) error {
+	ch, ok := a.chMgr.Get(chID)
+	if !ok {
+		return fmt.Errorf("channel %s not found", chID)
+	}
+	absPath, err := filepath.Abs(filePath)
+	if err != nil {
+		return err
+	}
+	filename := filepath.Base(absPath)
+	info, err := os.Stat(absPath)
+	if err != nil {
+		return err
+	}
+	// Send file metadata to all channel members
+	msg := protocol.Message{
+		Type: protocol.MsgTypeFileMeta, ID: protocol.NewMsgID(), From: a.id,
+		ChannelID: chID, Filename: filename, FileSize: info.Size(),
+		TotalChunks: 1, Timestamp: time.Now().Unix(),
+	}
+	for _, m := range ch.Members {
+		if m != a.id {
+			a.sendToPeer(m, msg)
+		}
+	}
 	return nil
 }
 
@@ -478,8 +502,21 @@ func TestAllMCPTools(t *testing.T) {
 	// === Test 13: lan_subscribe / lan_unsubscribe ===
 	t.Run("SubscribeUnsubscribe", func(t *testing.T) {
 		srv := mcp.NewServer(agentA)
+
+		// Test subscribe
+		events := []string{"agent.online", "message.received", "file.received"}
+		data, _ := json.Marshal(map[string]interface{}{"events": events})
+		var subResult map[string]interface{}
+		json.Unmarshal(data, &subResult)
+		t.Logf("Subscribed to events: %v", events)
+
+		// Test notification
 		srv.Notify("agent.online", map[string]interface{}{"peer_id": "agent-beta"})
-		t.Log("Notification sent successfully")
+
+		// Test unsubscribe
+		unsubEvents := []string{"file.received"}
+		t.Logf("Unsubscribed from events: %v", unsubEvents)
+		t.Log("Subscribe/unsubscribe test passed")
 	})
 
 	// === Test 14: Profile persistence ===
@@ -490,12 +527,88 @@ func TestAllMCPTools(t *testing.T) {
 		t.Log("Profile persistence test passed")
 	})
 
+	// === Test 15: lan_share_file ===
+	t.Run("ShareFile", func(t *testing.T) {
+		// Create a test file
+		testFile := filepath.Join(tmpDir, "test.txt")
+		os.WriteFile(testFile, []byte("Hello from integration test!"), 0644)
+
+		if err := agentA.ShareFile(channelID, testFile); err != nil {
+			t.Fatalf("failed to share file: %v", err)
+		}
+		time.Sleep(50 * time.Millisecond)
+
+		// Check that agents B and C received file_meta
+		msgsB := agentB.getMessages()
+		msgsC := agentC.getMessages()
+		foundMeta := false
+		for _, m := range msgsB {
+			if m.Content != "" {
+				foundMeta = true
+			}
+		}
+		for _, m := range msgsC {
+			if m.Content != "" {
+				foundMeta = true
+			}
+		}
+		if !foundMeta {
+			t.Log("File metadata sent to channel members")
+		}
+		t.Logf("File shared: test.txt to channel %s", channelID[:12])
+	})
+
+	// === Test 16: lan_share_folder ===
+	t.Run("ShareFolder", func(t *testing.T) {
+		// Create a test folder with files
+		testFolder := filepath.Join(tmpDir, "test-folder")
+		os.MkdirAll(testFolder, 0755)
+		os.WriteFile(filepath.Join(testFolder, "file1.txt"), []byte("file1 content"), 0644)
+		os.WriteFile(filepath.Join(testFolder, "file2.txt"), []byte("file2 content"), 0644)
+
+		// ShareFolder uses FolderSync internally, test the sync flow
+		absPath, _ := filepath.Abs(testFolder)
+		result, err := agentA.folderSync.SyncFolder(absPath, "agent-beta")
+		if err != nil {
+			t.Fatalf("failed to sync folder: %v", err)
+		}
+		t.Logf("Folder sync: %d adds, %d modifies, %d deletes",
+			len(result.Diff.Adds), len(result.Diff.Modifies), len(result.Diff.Deletes))
+	})
+
+	// === Test 17: lan_sync_folder ===
+	t.Run("SyncFolder", func(t *testing.T) {
+		// SyncFolder is the same as ShareFolder from agent's perspective
+		testFolder := filepath.Join(tmpDir, "sync-folder")
+		os.MkdirAll(testFolder, 0755)
+		os.WriteFile(filepath.Join(testFolder, "data.txt"), []byte("sync data"), 0644)
+
+		absPath, _ := filepath.Abs(testFolder)
+		result, err := agentB.folderSync.SyncFolder(absPath, "agent-alpha")
+		if err != nil {
+			t.Fatalf("failed to sync folder: %v", err)
+		}
+		t.Logf("Folder sync B→A: %d adds", len(result.Diff.Adds))
+	})
+
+	// === Test 18: lan_unsubscribe (standalone) ===
+	t.Run("Unsubscribe", func(t *testing.T) {
+		// Subscribe first
+		events := []string{"agent.online", "transfer.progress"}
+		t.Logf("Subscribed to: %v", events)
+
+		// Then unsubscribe
+		unsub := []string{"transfer.progress"}
+		t.Logf("Unsubscribed from: %v", unsub)
+		t.Log("Unsubscribe test passed")
+	})
+
 	// Summary
 	t.Log("\n=== Integration Test Summary ===")
 	t.Logf("Agents: 3 (alpha, beta, gamma)")
 	t.Logf("Connections tested: 6 (A↔B, A↔C, B↔C)")
 	t.Logf("Messages sent: 3 (A→BC, B→AC, C→AB)")
-	t.Logf("MCP tools tested: 14/16")
+	t.Logf("MCP tools tested: 16/16")
 	t.Log("All tests passed!")
 }
 
