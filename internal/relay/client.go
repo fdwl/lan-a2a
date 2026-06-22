@@ -22,9 +22,10 @@ type Client struct {
 
 	maxRetries int
 
-	OnMessage   func(msg protocol.Message, from string)
+	OnMessage    func(msg protocol.Message, from string)
 	OnFileData   func(msg protocol.Message, data io.Reader, from string)
 	OnOnlineList func(ids []string)
+	OnGoodbye    func(from string)
 }
 
 func NewClient(agentID, serverAddr string) *Client {
@@ -127,6 +128,12 @@ func (c *Client) QueryOnline() error {
 	})
 }
 
+func (c *Client) SendGoodbye() error {
+	return c.Send(protocol.Message{
+		Type: protocol.MsgTypeGoodbye, From: c.agentID, ID: protocol.NewMsgID(),
+	})
+}
+
 func (c *Client) readLoop() {
 	defer func() {
 		logger.Info("disconnected", "server", c.server)
@@ -173,6 +180,10 @@ func (c *Client) readLoop() {
 		case protocol.MsgTypeFileData:
 			if c.OnFileData != nil {
 				c.OnFileData(msg, protocol.BytesReader(msg.Data), msg.From)
+			}
+		case protocol.MsgTypeGoodbye:
+			if c.OnGoodbye != nil {
+				c.OnGoodbye(msg.From)
 			}
 		}
 	}

@@ -142,11 +142,7 @@ func (c *CLI) cmdList() {
 	}
 	fmt.Printf("\n\033[1mOnline Agents (%d):\033[0m\n", len(peers))
 	for _, id := range peers {
-		marker := " "
-		if len(id) > 8 {
-			id = id[:8]
-		}
-		fmt.Printf("  %s %s\n", marker, id)
+		fmt.Printf("  %s\n", id)
 	}
 }
 

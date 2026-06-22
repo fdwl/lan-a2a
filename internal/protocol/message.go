@@ -25,6 +25,7 @@ const (
 	MsgTypeFileDone     MsgType = "file_done"
 	MsgTypeQueryOnline  MsgType = "query_online"
 	MsgTypeOnlineList   MsgType = "online_list"
+	MsgTypeGoodbye      MsgType = "goodbye"
 )
 
 type Message struct {

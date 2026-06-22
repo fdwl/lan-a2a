@@ -39,6 +39,7 @@ type P2P struct {
 
 	OnMessage func(msg protocol.Message, from string)
 	OnFileData func(msg protocol.Message, data io.Reader, from string)
+	OnGoodbye func(from string)
 }
 
 func New(agentID string, port int) *P2P {
@@ -127,6 +128,12 @@ func (p *P2P) GetPeerProfile(peerID string) *protocol.ProfilePayload {
 		return nil
 	}
 	return peer.Profile
+}
+
+func (p *P2P) removeOnline(peerID string) {
+	p.onlineMu.Lock()
+	delete(p.online, peerID)
+	p.onlineMu.Unlock()
 }
 
 // OpenConn opens an on-demand WebSocket connection to a peer.
@@ -225,6 +232,13 @@ func (p *P2P) handleWS(w http.ResponseWriter, r *http.Request) {
 			if p.OnFileData != nil {
 				p.OnFileData(msg, protocol.BytesReader(msg.Data), msg.From)
 			}
+		case protocol.MsgTypeGoodbye:
+			p.removeOnline(msg.From)
+			if p.OnGoodbye != nil {
+				p.OnGoodbye(msg.From)
+			}
+			conn.Close()
+			return
 		}
 	}
 }

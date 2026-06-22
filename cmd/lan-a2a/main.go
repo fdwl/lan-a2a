@@ -508,6 +508,7 @@ func main() {
 	stopDisc, err := p2p.StartDiscovery(*id, *port,
 		func(peerID, addr string, peerPort int) {
 			a.markLANOnline(peerID)
+			a.p2p.MarkOnline(peerID, fmt.Sprintf("%s:%d", addr, peerPort))
 			logger.Info("peer online", "peer", peerID, "type", "lan")
 		},
 		func(relayAddr string) {
@@ -565,17 +566,29 @@ func main() {
 
 	<-sigCh
 	logger.Info("shutting down")
+
+	// Send goodbye to all connected peers
+	a.connsMu.Lock()
+	for peerID, conn := range a.conns {
+		if conn != nil {
+			conn.Send(protocol.Message{
+				Type: protocol.MsgTypeGoodbye, From: a.id, ID: protocol.NewMsgID(),
+			})
+		}
+		logger.Info("goodbye sent", "peer", peerID)
+		delete(a.conns, peerID)
+	}
+	a.connsMu.Unlock()
+
+	// Send goodbye through relay
+	if a.relay != nil {
+		a.relay.SendGoodbye()
+		a.relay.Stop()
+	}
+
 	if stopDisc != nil {
 		stopDisc()
 	}
-	if a.relay != nil {
-		a.relay.Stop()
-	}
-	a.connsMu.Lock()
-	for _, c := range a.conns {
-		c.Close()
-	}
-	a.connsMu.Unlock()
 	a.p2p.Stop()
 }
 
