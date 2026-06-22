@@ -71,7 +71,7 @@ func (p *P2P) Start() error {
 }
 
 func (p *P2P) cleanupStalePeers() {
-	ticker := time.NewTicker(30 * time.Second)
+	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
 	for {
 		select {
@@ -80,7 +80,7 @@ func (p *P2P) cleanupStalePeers() {
 		case <-ticker.C:
 			p.onlineMu.Lock()
 			for id, peer := range p.online {
-				if time.Since(peer.LastSeen) > 60*time.Second {
+				if time.Since(peer.LastSeen) > 30*time.Second {
 					delete(p.online, id)
 					logger.Info("removed stale peer", "peer_id", id)
 				}
@@ -218,9 +218,16 @@ func (p *P2P) handleWS(w http.ResponseWriter, r *http.Request) {
 	p.onlineMu.Unlock()
 
 	// Read messages until closed
+	peerID := msg.From
 	for {
 		msg, err := conn.Read()
 		if err != nil {
+			// Connection lost — remove peer immediately
+			p.removeOnline(peerID)
+			if p.OnGoodbye != nil {
+				p.OnGoodbye(peerID)
+			}
+			logger.Info("peer disconnected", "peer", peerID)
 			return
 		}
 		switch msg.Type {

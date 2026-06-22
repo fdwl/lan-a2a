@@ -47,6 +47,13 @@ func (a *agent) markLANOnline(peerID string) {
 	a.onlineMu.Unlock()
 }
 
+func (a *agent) markLANOffline(peerID string) {
+	a.onlineMu.Lock()
+	delete(a.lanOnline, peerID)
+	delete(a.relayOnline, peerID)
+	a.onlineMu.Unlock()
+}
+
 func (a *agent) markRelayOnline(ids []string) {
 	a.onlineMu.Lock()
 	a.relayOnline = make(map[string]bool, len(ids))
@@ -494,6 +501,10 @@ func main() {
 		data, _ := io.ReadAll(reader)
 		a.fileMgr.AddChunk(msg.ID, msg.ChunkIdx, data)
 	}
+	a.p2p.OnGoodbye = func(from string) {
+		a.markLANOffline(from)
+		logger.Info("peer gone (goodbye)", "peer", from)
+	}
 	a.fileMgr.OnComplete = func(f *filetransfer.IncomingFile) {
 		logger.Info("file saved", "filename", f.Filename, "path", f.LocalPath)
 	}
@@ -520,6 +531,10 @@ func main() {
 			a.relay.OnFileData = a.p2p.OnFileData
 			a.relay.OnOnlineList = func(ids []string) {
 				a.markRelayOnline(ids)
+			}
+			a.relay.OnGoodbye = func(from string) {
+				a.markLANOffline(from)
+				logger.Info("peer gone via relay (goodbye)", "peer", from)
 			}
 			if err := a.relay.Connect(); err != nil {
 				logger.Error("relay connect failed", "error", err)
