@@ -13,11 +13,13 @@ import (
 	"time"
 
 	"github.com/fdwl/lan-a2a/internal/channel"
+	"github.com/fdwl/lan-a2a/internal/cli"
 	"github.com/fdwl/lan-a2a/internal/fileservice"
 	"github.com/fdwl/lan-a2a/internal/filetransfer"
 	"github.com/fdwl/lan-a2a/internal/logger"
 	"github.com/fdwl/lan-a2a/internal/mcp"
 	"github.com/fdwl/lan-a2a/internal/p2p"
+	"github.com/fdwl/lan-a2a/internal/profile"
 	"github.com/fdwl/lan-a2a/internal/protocol"
 	"github.com/fdwl/lan-a2a/internal/relay"
 )
@@ -431,20 +433,20 @@ func (a *agent) SetProfile(name, description string, skills []string) error {
 func main() {
 	id := flag.String("id", "", "Agent ID (auto-generated if empty)")
 	port := flag.Int("port", 0, "TCP port (auto if 0)")
+	profileDir := flag.String("profile-dir", "", "Profile directory (default: cwd, then ~/.lan-a2a)")
+	profilePath := flag.String("profile", "", "Exact profile file path")
 	flag.Parse()
 
+	logger.Init("info", nil)
+
+	// Load or create profile
+	prof := loadProfile(*id, *profileDir, *profilePath)
 	if *id == "" {
-		hostname, _ := os.Hostname()
-		if hostname == "" {
-			hostname = "agent"
-		}
-		*id = fmt.Sprintf("%s-%d", hostname, os.Getpid())
+		*id = prof.ID
 	}
 	if *port == 0 {
 		*port = 19100 + os.Getpid()%1000
 	}
-
-	logger.Init("info", nil)
 
 	a := &agent{
 		id:          *id,
@@ -531,17 +533,36 @@ func main() {
 		logger.Warn("mDNS discovery unavailable", "error", err)
 	}
 
-	// MCP stdio
-	srv := mcp.NewServer(a)
-	go srv.Run()
-
-	home, _ := os.UserHomeDir()
-	os.MkdirAll(filepath.Join(home, filetransfer.DownloadBaseDir), 0755)
-
 	logger.Info("agent ready", "id", *id, "port", *port)
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+
+	// MCP stdio
+	srv := mcp.NewServer(a)
+
+	// Detect interactive mode: stdin is a terminal
+	interactive := isTerminal()
+
+	if interactive {
+		// Interactive CLI mode
+		c := cli.New(a, *id, profString(prof))
+		go func() {
+			<-c.Quit()
+			sigCh <- syscall.SIGTERM
+		}()
+		go func() {
+			fmt.Println("\033[32mReady. Type 'help' for commands.\033[0m")
+			c.Run()
+		}()
+	} else {
+		// SDK/MCP mode
+		go srv.Run()
+	}
+
+	home, _ := os.UserHomeDir()
+	os.MkdirAll(filepath.Join(home, filetransfer.DownloadBaseDir), 0755)
+
 	<-sigCh
 	logger.Info("shutting down")
 	if stopDisc != nil {
@@ -568,4 +589,103 @@ func truncate(s string, n int) string {
 func jsonArr(items []string) string {
 	b, _ := json.Marshal(items)
 	return string(b)
+}
+
+func isTerminal() bool {
+	fi, err := os.Stdin.Stat()
+	if err != nil {
+		return false
+	}
+	return fi.Mode()&os.ModeCharDevice != 0
+}
+
+func loadProfile(id, profileDir, profilePath string) *profile.Profile {
+	// 1. Exact path specified
+	if profilePath != "" {
+		p, err := profile.Load(filepath.Dir(profilePath))
+		if err == nil {
+			if id != "" {
+				p.ID = id
+			}
+			logger.Info("profile loaded", "path", profilePath, "name", p.Name)
+			return p
+		}
+		logger.Warn("profile not found at specified path", "path", profilePath, "error", err)
+	}
+
+	// 2. Directory specified
+	if profileDir != "" {
+		p, err := profile.Load(profileDir)
+		if err == nil {
+			if id != "" {
+				p.ID = id
+			}
+			logger.Info("profile loaded", "dir", profileDir, "name", p.Name)
+			return p
+		}
+		logger.Warn("profile not found in specified directory", "dir", profileDir, "error", err)
+	}
+
+	// 3. Current working directory
+	if p, err := profile.Load("."); err == nil {
+		if id != "" {
+			p.ID = id
+		}
+		logger.Info("profile loaded from cwd", "name", p.Name)
+		return p
+	}
+
+	// 4. Home directory (~/.lan-a2a/)
+	home, _ := os.UserHomeDir()
+	if home != "" {
+		homeDir := filepath.Join(home, ".lan-a2a")
+		os.MkdirAll(homeDir, 0755)
+		if p, err := profile.Load(homeDir); err == nil {
+			if id != "" {
+				p.ID = id
+			}
+			logger.Info("profile loaded from home", "name", p.Name)
+			return p
+		}
+		// Create default profile in home dir
+		hostname, _ := os.Hostname()
+		if hostname == "" {
+			hostname = "agent"
+		}
+		agentID := id
+		if agentID == "" {
+			agentID = fmt.Sprintf("%s-%d", hostname, os.Getpid())
+		}
+		p := &profile.Profile{
+			ID:   agentID,
+			Name: hostname,
+			Roles: []string{"general"},
+			Metadata: map[string]string{
+				"description": "LanA2A agent",
+			},
+		}
+		p.SetTimestamps()
+		profile.Save(p, homeDir)
+		logger.Info("default profile created", "path", homeDir, "id", agentID)
+		return p
+	}
+
+	// 5. Fallback: create in-memory profile
+	hostname, _ := os.Hostname()
+	if hostname == "" {
+		hostname = "agent"
+	}
+	agentID := id
+	if agentID == "" {
+		agentID = fmt.Sprintf("%s-%d", hostname, os.Getpid())
+	}
+	return &profile.Profile{
+		ID:   agentID,
+		Name: hostname,
+		Roles: []string{"general"},
+	}
+}
+
+func profString(p *profile.Profile) string {
+	return fmt.Sprintf("%s (%s)", p.Name, p.ID)
 }

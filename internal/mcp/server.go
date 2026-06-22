@@ -3,7 +3,6 @@ package mcp
 import (
 	"bufio"
 	"encoding/json"
-	"fmt"
 	"io"
 	"os"
 	"strings"
@@ -416,7 +415,8 @@ func (s *Server) handleToolCall(id interface{}, params json.RawMessage) {
 		return
 	}
 
-	text := fmt.Sprintf("%v", result)
+	textBytes, _ := json.Marshal(result)
+	text := string(textBytes)
 	s.reply(id, map[string]interface{}{
 		"content": []map[string]interface{}{{"type": "text", "text": text}},
 	})
